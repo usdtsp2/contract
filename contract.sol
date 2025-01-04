@@ -1,29 +1,29 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.0;
 
-contract TRC20AdvancedToken {
+// Define the TRC-20 interface
+interface ITRC20 {
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address recipient, uint256 amount) external returns (bool);
+    function approve(address spender, uint256 amount) external returns (bool);
+    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+}
+
+contract TRC20AdvancedToken is ITRC20 {
     // Token details
-    /**
-     * @dev USDTSP2.
-     */
     string public name;
-    /**
-     * @dev USDT.
-     */
     string public symbol;
-    /**
-     * @dev Token decimal places, default is 18.
-     */
     uint8 public decimals = 18;
-    /**
-     * @dev Total token supply in smallest units.
-     */
     uint256 public totalSupply;
 
     address public owner;
     uint256 public buyFee;
     uint256 public sellFee;
-    uint256 public cooldownTime = 30; // Default 30 seconds cooldown
+    uint256 public cooldownTime = 30;
 
     mapping(address => uint256) private balances;
     mapping(address => mapping(address => uint256)) private allowances;
@@ -32,14 +32,11 @@ contract TRC20AdvancedToken {
     mapping(address => uint256) private _lastTransferTime;
     mapping(address => uint256) private _stakedBalances;
     mapping(address => uint256) private _stakingRewards;
+    address[] private stakerAddresses;
 
     // Events
     event Transfer(address indexed from, address indexed to, uint256 value);
-    event Approval(
-        address indexed owner,
-        address indexed spender,
-        uint256 value
-    );
+    event Approval(address indexed owner, address indexed spender, uint256 value);
     event BlacklistUpdated(address indexed user, bool isBlacklisted);
     event AccountFrozen(address indexed user, bool isFrozen);
     event FeesUpdated(uint256 buyFee, uint256 sellFee);
@@ -76,24 +73,18 @@ contract TRC20AdvancedToken {
         emit Transfer(address(0), msg.sender, totalSupply);
     }
 
-    // Standard functions
-    function balanceOf(address account) public view returns (uint256) {
+    // TRC-20 Functions
+    function balanceOf(address account) public view override returns (uint256) {
         return balances[account];
     }
-    function totalSupply() external view returns (uint256) {
-        // logic to return the total supply, usually something like:
-        return totalSupply; 
+
+    function totalSupply() external view override returns (uint256) {
+        return totalSupply;
     }
 
-    function transfer(
-        address to,
-        uint256 value
-    ) public notBlacklisted(msg.sender) notFrozen(msg.sender) returns (bool) {
+    function transfer(address to, uint256 value) public notBlacklisted(msg.sender) notFrozen(msg.sender) override returns (bool) {
         require(balances[msg.sender] >= value, "Insufficient balance");
-        require(
-            block.timestamp >= _lastTransferTime[msg.sender] + cooldownTime,
-            "Cooldown period active"
-        );
+        require(block.timestamp >= _lastTransferTime[msg.sender] + cooldownTime, "Cooldown period active");
 
         balances[msg.sender] -= value;
         balances[to] += value;
@@ -103,38 +94,27 @@ contract TRC20AdvancedToken {
         return true;
     }
 
-    function approve(address spender, uint256 value) public returns (bool) {
+    function approve(address spender, uint256 value) public override returns (bool) {
         allowances[msg.sender][spender] = value;
         emit Approval(msg.sender, spender, value);
         return true;
     }
 
-   function transferFrom(
-    address from,
-    address to,
-    uint256 value
-) public notBlacklisted(from) notFrozen(from) returns (bool) {
-    require(balances[from] >= value, "Insufficient balance");
-    require(allowances[from][msg.sender] >= value, "Allowance exceeded");
-    require(
-        block.timestamp >= _lastTransferTime[from] + cooldownTime,
-        "Cooldown period active"
-    );
+    function transferFrom(address from, address to, uint256 value) public notBlacklisted(from) notFrozen(from) override returns (bool) {
+        require(balances[from] >= value, "Insufficient balance");
+        require(allowances[from][msg.sender] >= value, "Allowance exceeded");
+        require(block.timestamp >= _lastTransferTime[from] + cooldownTime, "Cooldown period active");
 
-    balances[from] -= value;
-    balances[to] += value;
-    allowances[from][msg.sender] -= value;
-    _lastTransferTime[from] = block.timestamp;
+        balances[from] -= value;
+        balances[to] += value;
+        allowances[from][msg.sender] -= value;
+        _lastTransferTime[from] = block.timestamp;
 
-    emit Transfer(from, to, value);
-    return true;
-}
+        emit Transfer(from, to, value);
+        return true;
+    }
 
-
-    function allowance(
-        address owner,
-        address spender
-    ) public view returns (uint256) {
+    function allowance(address owner, address spender) public view override returns (uint256) {
         return allowances[owner][spender];
     }
 
