@@ -80,6 +80,10 @@ contract TRC20AdvancedToken {
     function balanceOf(address account) public view returns (uint256) {
         return balances[account];
     }
+    function totalSupply() external view returns (uint256) {
+        // logic to return the total supply, usually something like:
+        return totalSupply; 
+    }
 
     function transfer(
         address recipient,
