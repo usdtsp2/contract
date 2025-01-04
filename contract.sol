@@ -86,55 +86,56 @@ contract TRC20AdvancedToken {
     }
 
     function transfer(
-        address recipient,
-        uint256 amount
+        address to,
+        uint256 value
     ) public notBlacklisted(msg.sender) notFrozen(msg.sender) returns (bool) {
-        require(balances[msg.sender] >= amount, "Insufficient balance");
+        require(balances[msg.sender] >= value, "Insufficient balance");
         require(
             block.timestamp >= _lastTransferTime[msg.sender] + cooldownTime,
             "Cooldown period active"
         );
 
-        balances[msg.sender] -= amount;
-        balances[recipient] += amount;
+        balances[msg.sender] -= value;
+        balances[to] += value;
         _lastTransferTime[msg.sender] = block.timestamp;
 
-        emit Transfer(msg.sender, recipient, amount);
+        emit Transfer(msg.sender, to, value);
         return true;
     }
 
-    function approve(address spender, uint256 amount) public returns (bool) {
-        allowances[msg.sender][spender] = amount;
-        emit Approval(msg.sender, spender, amount);
+    function approve(address spender, uint256 value) public returns (bool) {
+        allowances[msg.sender][spender] = value;
+        emit Approval(msg.sender, spender, value);
         return true;
     }
 
-    function transferFrom(
-        address sender,
-        address recipient,
-        uint256 amount
-    ) public notBlacklisted(sender) notFrozen(sender) returns (bool) {
-        require(balances[sender] >= amount, "Insufficient balance");
-        require(allowances[sender][msg.sender] >= amount, "Allowance exceeded");
-        require(
-            block.timestamp >= _lastTransferTime[sender] + cooldownTime,
-            "Cooldown period active"
-        );
+   function transferFrom(
+    address from,
+    address to,
+    uint256 value
+) public notBlacklisted(from) notFrozen(from) returns (bool) {
+    require(balances[from] >= value, "Insufficient balance");
+    require(allowances[from][msg.sender] >= value, "Allowance exceeded");
+    require(
+        block.timestamp >= _lastTransferTime[from] + cooldownTime,
+        "Cooldown period active"
+    );
 
-        balances[sender] -= amount;
-        balances[recipient] += amount;
-        allowances[sender][msg.sender] -= amount;
-        _lastTransferTime[sender] = block.timestamp;
+    balances[from] -= value;
+    balances[to] += value;
+    allowances[from][msg.sender] -= value;
+    _lastTransferTime[from] = block.timestamp;
 
-        emit Transfer(sender, recipient, amount);
-        return true;
-    }
+    emit Transfer(from, to, value);
+    return true;
+}
+
 
     function allowance(
-        address tokenOwner,
+        address owner,
         address spender
     ) public view returns (uint256) {
-        return allowances[tokenOwner][spender];
+        return allowances[owner][spender];
     }
 
     // Advanced features
