@@ -1,11 +1,23 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity 0.8.0;
 
 contract TRC20AdvancedToken {
     // Token details
+    /**
+     * @dev USDTSP2.
+     */
     string public name;
+    /**
+     * @dev USDT.
+     */
     string public symbol;
+    /**
+     * @dev Token decimal places, default is 18.
+     */
     uint8 public decimals = 18;
+    /**
+     * @dev Total token supply in smallest units.
+     */
     uint256 public totalSupply;
 
     address public owner;
@@ -23,7 +35,11 @@ contract TRC20AdvancedToken {
 
     // Events
     event Transfer(address indexed from, address indexed to, uint256 value);
-    event Approval(address indexed owner, address indexed spender, uint256 value);
+    event Approval(
+        address indexed owner,
+        address indexed spender,
+        uint256 value
+    );
     event BlacklistUpdated(address indexed user, bool isBlacklisted);
     event AccountFrozen(address indexed user, bool isFrozen);
     event FeesUpdated(uint256 buyFee, uint256 sellFee);
@@ -47,7 +63,11 @@ contract TRC20AdvancedToken {
         _;
     }
 
-    constructor(string memory _name, string memory _symbol, uint256 _initialSupply) {
+    constructor(
+        string memory _name,
+        string memory _symbol,
+        uint256 _initialSupply
+    ) {
         name = _name;
         symbol = _symbol;
         totalSupply = _initialSupply * (10 ** decimals);
@@ -61,9 +81,15 @@ contract TRC20AdvancedToken {
         return balances[account];
     }
 
-    function transfer(address recipient, uint256 amount) public notBlacklisted(msg.sender) notFrozen(msg.sender) returns (bool) {
+    function transfer(
+        address recipient,
+        uint256 amount
+    ) public notBlacklisted(msg.sender) notFrozen(msg.sender) returns (bool) {
         require(balances[msg.sender] >= amount, "Insufficient balance");
-        require(block.timestamp >= _lastTransferTime[msg.sender] + cooldownTime, "Cooldown period active");
+        require(
+            block.timestamp >= _lastTransferTime[msg.sender] + cooldownTime,
+            "Cooldown period active"
+        );
 
         balances[msg.sender] -= amount;
         balances[recipient] += amount;
@@ -79,10 +105,17 @@ contract TRC20AdvancedToken {
         return true;
     }
 
-    function transferFrom(address sender, address recipient, uint256 amount) public notBlacklisted(sender) notFrozen(sender) returns (bool) {
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) public notBlacklisted(sender) notFrozen(sender) returns (bool) {
         require(balances[sender] >= amount, "Insufficient balance");
         require(allowances[sender][msg.sender] >= amount, "Allowance exceeded");
-        require(block.timestamp >= _lastTransferTime[sender] + cooldownTime, "Cooldown period active");
+        require(
+            block.timestamp >= _lastTransferTime[sender] + cooldownTime,
+            "Cooldown period active"
+        );
 
         balances[sender] -= amount;
         balances[recipient] += amount;
@@ -93,12 +126,18 @@ contract TRC20AdvancedToken {
         return true;
     }
 
-    function allowance(address tokenOwner, address spender) public view returns (uint256) {
+    function allowance(
+        address tokenOwner,
+        address spender
+    ) public view returns (uint256) {
         return allowances[tokenOwner][spender];
     }
 
     // Advanced features
-    function updateBlacklist(address user, bool isBlacklisted) public onlyOwner {
+    function updateBlacklist(
+        address user,
+        bool isBlacklisted
+    ) public onlyOwner {
         _blacklisted[user] = isBlacklisted;
         emit BlacklistUpdated(user, isBlacklisted);
     }
@@ -108,7 +147,10 @@ contract TRC20AdvancedToken {
         emit AccountFrozen(user, isFrozen);
     }
 
-    function setTransactionFees(uint256 _buyFee, uint256 _sellFee) public onlyOwner {
+    function setTransactionFees(
+        uint256 _buyFee,
+        uint256 _sellFee
+    ) public onlyOwner {
         buyFee = _buyFee;
         sellFee = _sellFee;
         emit FeesUpdated(buyFee, sellFee);
@@ -126,7 +168,10 @@ contract TRC20AdvancedToken {
 
     function unstake(uint256 amount) public {
         require(amount > 0, "Cannot unstake 0");
-        require(_stakedBalances[msg.sender] >= amount, "Insufficient staked balance");
+        require(
+            _stakedBalances[msg.sender] >= amount,
+            "Insufficient staked balance"
+        );
 
         _stakedBalances[msg.sender] -= amount;
         balances[msg.sender] += amount;
@@ -140,7 +185,8 @@ contract TRC20AdvancedToken {
 
         for (uint256 i = 0; i < getNumberOfStakers(); i++) {
             address staker = getStakerByIndex(i);
-            uint256 reward = (totalRewards * _stakedBalances[staker]) / totalStaked;
+            uint256 reward = (totalRewards * _stakedBalances[staker]) /
+                totalStaked;
             _stakingRewards[staker] += reward;
         }
         emit RewardsDistributed(totalRewards);
@@ -162,11 +208,21 @@ contract TRC20AdvancedToken {
         return total;
     }
 
+    /**
+     * @dev Returns the staker address at a given index.
+     * @param index The index of the staker in the staker list.
+     * @return The address of the staker at the specified index.
+     */
     function getStakerByIndex(uint256 index) public view returns (address) {
-        // Logic to fetch staker by index
+        require(index < stakerAddresses.length, "Index out of bounds");
+        return stakerAddresses[index];
     }
 
+    /**
+     * @dev Returns the total number of stakers.
+     * @return The number of stakers.
+     */
     function getNumberOfStakers() public view returns (uint256) {
-        // Logic to fetch total number of stakers
+        return stakerAddresses.length;
     }
 }
