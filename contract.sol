@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.0;
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 // Define the TRC-20 interface
 interface ITRC20 {
@@ -13,7 +15,7 @@ interface ITRC20 {
     event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
-contract TRC20AdvancedToken is ITRC20 {
+contract TRC20AdvancedToken is ITRC20, ReentrancyGuard {
     // Token details
     string public name;
     string public symbol;
@@ -24,6 +26,10 @@ contract TRC20AdvancedToken is ITRC20 {
     uint256 public buyFee;
     uint256 public sellFee;
     uint256 public cooldownTime = 30;
+    uint256 public maximumFee;
+    bool public paused;
+    address public upgradedAddress;
+    bool public deprecated;
 
     mapping(address => uint256) private balances;
     mapping(address => mapping(address => uint256)) private allowances;
@@ -43,6 +49,9 @@ contract TRC20AdvancedToken is ITRC20 {
     event Stake(address indexed user, uint256 amount);
     event Unstake(address indexed user, uint256 amount);
     event RewardsDistributed(uint256 totalRewards);
+    event ContractDeprecated(address upgradedAddress);
+    event DestroyedBlacklistedFunds(address indexed blacklistedUser, uint256 amount);
+    event PauseStateChanged(bool isPaused);
 
     // Modifiers
     modifier onlyOwner() {
@@ -60,11 +69,20 @@ contract TRC20AdvancedToken is ITRC20 {
         _;
     }
 
+    modifier whenNotPaused() {
+        require(!paused, "Contract is paused");
+        _;
+    }
+
     constructor(
         string memory _name,
         string memory _symbol,
         uint256 _initialSupply
     ) {
+        require(bytes(_name).length > 0, "Name cannot be empty");
+        require(bytes(_symbol).length > 0, "Symbol cannot be empty");
+        require(_initialSupply > 0, "Initial supply must be greater than 0");
+
         name = _name;
         symbol = _symbol;
         totalSupply = _initialSupply * (10 ** decimals);
@@ -82,15 +100,25 @@ contract TRC20AdvancedToken is ITRC20 {
         return totalSupply;
     }
 
-    function transfer(address to, uint256 value) public notBlacklisted(msg.sender) notFrozen(msg.sender) override returns (bool) {
+    function transfer(address to, uint256 value) public notBlacklisted(msg.sender) notFrozen(msg.sender) whenNotPaused override returns (bool) {
         require(balances[msg.sender] >= value, "Insufficient balance");
         require(block.timestamp >= _lastTransferTime[msg.sender] + cooldownTime, "Cooldown period active");
 
+        uint256 fee = (value * buyFee) / 10000;
+        uint256 netValue = value - fee;
+
         balances[msg.sender] -= value;
-        balances[to] += value;
+        balances[to] += netValue;
+        if (fee > 0) {
+            balances[owner] += fee;
+        }
         _lastTransferTime[msg.sender] = block.timestamp;
 
-        emit Transfer(msg.sender, to, value);
+        emit Transfer(msg.sender, to, netValue);
+        if (fee > 0) {
+            emit Transfer(msg.sender, owner, fee);
+        }
+
         return true;
     }
 
@@ -100,17 +128,27 @@ contract TRC20AdvancedToken is ITRC20 {
         return true;
     }
 
-    function transferFrom(address from, address to, uint256 value) public notBlacklisted(from) notFrozen(from) override returns (bool) {
+    function transferFrom(address from, address to, uint256 value) public notBlacklisted(from) notFrozen(from) whenNotPaused override returns (bool) {
         require(balances[from] >= value, "Insufficient balance");
         require(allowances[from][msg.sender] >= value, "Allowance exceeded");
         require(block.timestamp >= _lastTransferTime[from] + cooldownTime, "Cooldown period active");
 
+        uint256 fee = (value * sellFee) / 10000;
+        uint256 netValue = value - fee;
+
         balances[from] -= value;
-        balances[to] += value;
+        balances[to] += netValue;
+        if (fee > 0) {
+            balances[owner] += fee;
+        }
         allowances[from][msg.sender] -= value;
         _lastTransferTime[from] = block.timestamp;
 
-        emit Transfer(from, to, value);
+        emit Transfer(from, to, netValue);
+        if (fee > 0) {
+            emit Transfer(from, owner, fee);
+        }
+
         return true;
     }
 
@@ -136,22 +174,58 @@ contract TRC20AdvancedToken is ITRC20 {
         uint256 _buyFee,
         uint256 _sellFee
     ) public onlyOwner {
+        require(_buyFee <= 10000, "Buy fee must be <= 100%");
+        require(_sellFee <= 10000, "Sell fee must be <= 100%");
+
         buyFee = _buyFee;
         sellFee = _sellFee;
         emit FeesUpdated(buyFee, sellFee);
     }
 
-    function stake(uint256 amount) public {
+    function setMaxFee(uint256 newMaxFee) public onlyOwner {
+        maximumFee = newMaxFee;
+    }
+
+    function deprecate(address _upgradedAddress) public onlyOwner {
+        require(_upgradedAddress != address(0), "Invalid address");
+        deprecated = true;
+        upgradedAddress = _upgradedAddress;
+        emit ContractDeprecated(_upgradedAddress);
+    }
+
+    function destroyBlacklistedFunds(address _blacklistedUser) public onlyOwner {
+        require(_blacklisted[_blacklistedUser], "Not blacklisted");
+        uint256 dirtyFunds = balances[_blacklistedUser];
+        balances[_blacklistedUser] = 0;
+        totalSupply -= dirtyFunds;
+        emit DestroyedBlacklistedFunds(_blacklistedUser, dirtyFunds);
+    }
+
+    function pause() external onlyOwner {
+        paused = true;
+        emit PauseStateChanged(true);
+    }
+
+    function unpause() external onlyOwner {
+        paused = false;
+        emit PauseStateChanged(false);
+    }
+
+    function stake(uint256 amount) public nonReentrant {
         require(amount > 0, "Cannot stake 0");
         require(balances[msg.sender] >= amount, "Insufficient balance");
 
         balances[msg.sender] -= amount;
         _stakedBalances[msg.sender] += amount;
 
+        if (_stakedBalances[msg.sender] == amount) {
+            stakerAddresses.push(msg.sender);
+        }
+
         emit Stake(msg.sender, amount);
     }
 
-    function unstake(uint256 amount) public {
+    function unstake(uint256 amount) public nonReentrant {
         require(amount > 0, "Cannot unstake 0");
         require(
             _stakedBalances[msg.sender] >= amount,
@@ -164,12 +238,13 @@ contract TRC20AdvancedToken is ITRC20 {
         emit Unstake(msg.sender, amount);
     }
 
-    function distributeRewards(uint256 totalRewards) public onlyOwner {
+    function distributeRewards(uint256 totalRewards) public onlyOwner nonReentrant {
         require(totalRewards > 0, "No rewards to distribute");
         uint256 totalStaked = getTotalStaked();
+        require(totalStaked > 0, "No staked tokens");
 
-        for (uint256 i = 0; i < getNumberOfStakers(); i++) {
-            address staker = getStakerByIndex(i);
+        for (uint256 i = 0; i < stakerAddresses.length; i++) {
+            address staker = stakerAddresses[i];
             uint256 reward = (totalRewards * _stakedBalances[staker]) /
                 totalStaked;
             _stakingRewards[staker] += reward;
@@ -177,18 +252,20 @@ contract TRC20AdvancedToken is ITRC20 {
         emit RewardsDistributed(totalRewards);
     }
 
-    function claimRewards() public {
+    function claimRewards() public nonReentrant {
         uint256 rewards = _stakingRewards[msg.sender];
         require(rewards > 0, "No rewards to claim");
 
         _stakingRewards[msg.sender] = 0;
         balances[msg.sender] += rewards;
+
+        emit Transfer(address(0), msg.sender, rewards);
     }
 
     function getTotalStaked() public view returns (uint256) {
         uint256 total = 0;
-        for (uint256 i = 0; i < getNumberOfStakers(); i++) {
-            total += _stakedBalances[getStakerByIndex(i)];
+        for (uint256 i = 0; i < stakerAddresses.length; i++) {
+            total += _stakedBalances[stakerAddresses[i]];
         }
         return total;
     }
